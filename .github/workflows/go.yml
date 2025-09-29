@@ -31,7 +31,7 @@ jobs:
       run: |
           mkdir -p dist
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-          go build -ldflags "-s -w" -o dist/tardisync-${{ matrix.goos }}-${{ matrix.goarch }}
+          go build -ldflags "-s -w" -o dist/belterlink-${{ matrix.goos }}-${{ matrix.goarch }}
     - name: Checksums
       run: |
           cd dist
