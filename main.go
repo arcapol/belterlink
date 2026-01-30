@@ -39,6 +39,14 @@ type Config struct {
 
 var version = "0.1.0"
 
+type RunOptions struct {
+	DryRun    bool
+	Delete    bool
+	Checksum  bool
+	NoVerbose bool
+	Direction string
+}
+
 func main() {
 	// Flags
 	cfgPath := flag.String("config", defaultConfigPath(), "path to config YAML (default: ~/.belterlink/config.yaml)")
@@ -61,10 +69,9 @@ func main() {
 		return
 	}
 
-	categoryName := args[0]
-	direction := strings.ToLower(args[1])
-	if direction != "push" && direction != "pull" {
-		fail("direction must be 'push' or 'pull'")
+	categoryName, direction, err := parseArgs(args)
+	if err != nil {
+		fail("%v", err)
 	}
 
 	// Load config
@@ -82,17 +89,57 @@ func main() {
 		fail("ssh.user and ssh.host are required in config")
 	}
 
+	opts := RunOptions{
+		DryRun:    *dryRun,
+		Delete:    *deleteFlag,
+		Checksum:  *checksum,
+		NoVerbose: *noVerbose,
+		Direction: direction,
+	}
+	rsArgs, err := buildRsyncArgs(cfg, cat, opts)
+	if err != nil {
+		fail("build rsync args: %v", err)
+	}
+
+	fmt.Println("Running:", "rsync", strings.Join(rsArgs, " "))
+
+	cmd := exec.Command("rsync", rsArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fail("rsync failed: %v", err)
+	}
+}
+
+func defaultConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./config.yaml"
+	}
+	return filepath.Join(home, ".belterlink", "config.yaml")
+}
+
+func buildRsyncArgs(cfg *Config, cat Category, opts RunOptions) ([]string, error) {
+	if cfg == nil {
+		return nil, errors.New("config is nil")
+	}
+	switch opts.Direction {
+	case "push", "pull":
+	default:
+		return nil, fmt.Errorf("invalid direction %q", opts.Direction)
+	}
+
 	// Resolve defaults
-	useDelete := getBool(*deleteFlag, cfg.Defaults.Delete, false)
-	useChecksum := getBool(*checksum, cfg.Defaults.Checksum, false)
-	useVerbose := getBool(!*noVerbose, cfg.Defaults.Verbose, true)
+	useDelete := getBool(opts.Delete, cfg.Defaults.Delete, false)
+	useChecksum := getBool(opts.Checksum, cfg.Defaults.Checksum, false)
+	useVerbose := getBool(!opts.NoVerbose, cfg.Defaults.Verbose, true)
 
 	// Base rsync args
 	rsArgs := []string{"-aH", "--protect-args", "--update"} // archive + hardlinks + don't clobber newer
 	if useVerbose {
 		rsArgs = append(rsArgs, "-v")
 	}
-	if *dryRun {
+	if opts.DryRun {
 		rsArgs = append(rsArgs, "--dry-run")
 	}
 	if useChecksum {
@@ -129,29 +176,14 @@ func main() {
 	local := ensureTrailingSlash(cat.Local)
 	remote := fmt.Sprintf("%s@%s:%s/", cfg.SSH.User, cfg.SSH.Host, strings.TrimRight(cat.Remote, "/"))
 
-	switch direction {
+	switch opts.Direction {
 	case "push": // local → remote
 		rsArgs = append(rsArgs, local, remote)
 	case "pull": // remote → local
 		rsArgs = append(rsArgs, remote, local)
 	}
 
-	fmt.Println("Running:", "rsync", strings.Join(rsArgs, " "))
-
-	cmd := exec.Command("rsync", rsArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fail("rsync failed: %v", err)
-	}
-}
-
-func defaultConfigPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "./config.yaml"
-	}
-	return filepath.Join(home, ".belterlink", "config.yaml")
+	return rsArgs, nil
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -170,6 +202,26 @@ func loadConfig(path string) (*Config, error) {
 		return nil, errors.New("no categories defined")
 	}
 	return &cfg, nil
+}
+
+func parseArgs(args []string) (string, string, error) {
+	if len(args) < 2 {
+		return "", "", errors.New("missing required arguments: <CategoryName> <push|pull>")
+	}
+	if len(args) > 2 {
+		extra := args[2:]
+		for _, arg := range extra {
+			if strings.HasPrefix(arg, "-") {
+				return "", "", fmt.Errorf("unexpected flag %q after positional args; flags must come before <CategoryName> <push|pull>", arg)
+			}
+		}
+		return "", "", fmt.Errorf("unexpected extra arguments: %s", strings.Join(extra, " "))
+	}
+	direction := strings.ToLower(args[1])
+	if direction != "push" && direction != "pull" {
+		return "", "", errors.New("direction must be 'push' or 'pull'")
+	}
+	return args[0], direction, nil
 }
 
 func ensureTrailingSlash(p string) string {
@@ -202,10 +254,10 @@ func shellEscape(s string) string {
 }
 
 func printHelp() {
-	fmt.Println(`belterlink — simple, config-driven rsync wrapper (one-way by choice)
+	fmt.Print(`belterlink — simple, config-driven rsync wrapper (one-way by choice)
 
 USAGE:
-  belterlink <CategoryName> <push|pull> [flags]
+  belterlink [flags] <CategoryName> <push|pull>
 
 FLAGS:
   -config <path>     Path to YAML config (default: ~/.belterlink/config.yaml)
@@ -215,6 +267,10 @@ FLAGS:
   -no-verbose        Disable verbose rsync output (config default can enable it)
   -help              Show this help
   -version           Print version
+
+EXAMPLES:
+  belterlink Notes push
+  belterlink -delete Notes push
 
 DIRECTION:
   push  : local → remote
