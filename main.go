@@ -37,7 +37,8 @@ type Config struct {
 	Defaults   Defaults            `yaml:"defaults,omitempty"`
 }
 
-var version = "0.1.0"
+// Overridden at build time with: -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
 
 type RunOptions struct {
 	DryRun    bool
