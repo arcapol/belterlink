@@ -16,14 +16,44 @@ with sensible defaults and optional safe deletions.
 
 Requires `rsync` and `ssh` on your machine.
 
+### One-line install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arcapol/belterlink/main/install.sh | sh
+```
+
+If you want to install from a fork:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arcapol/belterlink/main/install.sh | REPO=yourname/belterlink sh
+```
+
+### Local install
+
 ```bash
 ./install.sh
 ```
 
 ## Uninstallation 🧹
 
+### One-line uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arcapol/belterlink/main/uninstall.sh | sh
+```
+
+### Local uninstall
+
 ```bash
 ./uninstall.sh
+```
+
+## Update 🔄
+
+Just re-run the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arcapol/belterlink/main/install.sh | sh
 ```
 
 ## Quick start ⚡
